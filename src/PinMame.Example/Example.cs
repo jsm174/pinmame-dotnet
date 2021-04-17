@@ -32,11 +32,16 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using NLog;
+using Logger = NLog.Logger;
 
 namespace PinMame
 {
+
 	class Example
 	{
+		static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
 		static PinMame _pinMame;
 		static bool _isRunning = false;
 
@@ -44,16 +49,16 @@ namespace PinMame
 		{
 			foreach (var game in PinMame.GetGames())
 			{
-				Console.WriteLine($"PARENT: name={game.name}, description={game.description}, year={game.year}, manufacturer={game.manufacturer}");
+				Logger.Info($"PARENT: name={game.name}, description={game.description}, year={game.year}, manufacturer={game.manufacturer}");
 
 				foreach (var clone in game.clones)
 				{
-					Console.WriteLine($"  CLONE: name={clone.name}, description={clone.description}, year={clone.year}, manufacturer={clone.manufacturer}");
+					Logger.Info($"  CLONE: name={clone.name}, description={clone.description}, year={clone.year}, manufacturer={clone.manufacturer}");
 				}
 			}
 		}
 
-		static void DumpDmd(int index, PinMameDisplayLayout displayLayout, IntPtr framePtr)
+		static void DumpDmd(int index, IntPtr framePtr, PinMameDisplayLayout displayLayout)
 		{
 			Dictionary<byte, string> map;
 
@@ -65,7 +70,7 @@ namespace PinMame
 					{ 0x14, "░" },
 					{ 0x21, "▒" },
 					{ 0x43, "▓" },
-					{ 0x64, "▓" },
+					{ 0x64, "▓" }
 				};
 			}
 			else
@@ -93,7 +98,7 @@ namespace PinMame
 						{ 0x4B, "▓" },
 						{ 0x50, "▓" },
 						{ 0x5A, "▓" },
-						{ 0x64, "▓" },
+						{ 0x64, "▓" }
 					};
 				}
 				else
@@ -119,7 +124,7 @@ namespace PinMame
 						{ 0x55, "▓" },
 						{ 0x5A, "▓" },
 						{ 0x5F, "▓" },
-						{ 0x64, "▓" },
+						{ 0x64, "▓" }
 					};
 				}
 			}
@@ -143,7 +148,7 @@ namespace PinMame
 			}
 		}
 
-		static void DumpAlpha(int index, PinMameDisplayLayout displayLayout, IntPtr framePtr)
+		static void DumpAlpha(int index, IntPtr framePtr, PinMameDisplayLayout displayLayout)
 		{
 			unsafe
 			{
@@ -159,7 +164,7 @@ namespace PinMame
 						"E ONM C  " ,
 						"EO N MC P" ,
 						" DDDDD  H" ,
-						"       H " ,
+						"       H " 
 					};
 
 					for (var row = 0; row < 8; row++)
@@ -175,64 +180,62 @@ namespace PinMame
 						Console.SetCursorPosition(position * 10, index * 8 + row);
 						Console.Write(segments[row] + " ");
 					}
-
 				}
 			}
 		}
 
-		static void OnDisplayUpdate(object sender, EventArgs e, int index, IntPtr framePtr, PinMameDisplayLayout displayLayout)
+		static void OnGameStarted(object sender, EventArgs e)
 		{
-			Console.WriteLine("OnDisplayUpdate: index={0}, type={1}, top={2}, left={3}, length={4}, height={5}, width={6}, depth={7}",
-				index,
-				displayLayout.type,
-				displayLayout.top,
-				displayLayout.left,
-				displayLayout.length,
-				displayLayout.height,
-				displayLayout.width,
-				displayLayout.depth);
+			Logger.Info($"OnGameStarted: displayCount={_pinMame.GetDisplayCount()}");
+		}
 
-			if ((displayLayout.type & PinMameDisplayType.DMD) > 0)
+		static void OnDisplayUpdated(object sender, EventArgs e, int index, IntPtr framePtr, PinMameDisplayLayout displayLayout)
+		{
+			Logger.Info($"OnDisplayUpdated: index={index}, displayLayout={displayLayout}");
+
+			if (displayLayout.IsDmd)
 			{
-				DumpDmd(index, displayLayout, framePtr);
+				DumpDmd(index, framePtr, displayLayout);
 			}
 			else
 			{
-				DumpAlpha(index, displayLayout, framePtr);
+				DumpAlpha(index, framePtr, displayLayout);
 			}
 		}
 
-		static void OnSolenoid(object sender, EventArgs e, int solenoid, bool isActive)
+		static void OnSolenoidUpdated(object sender, EventArgs e, int solenoid, bool isActive)
 		{
-			Console.WriteLine("OnSolenoid: solenoid={0}, isActive={1}",
-				solenoid,
-				isActive);
-		}
-
-		static void OnGameStarted(object sender, EventArgs e)
-		{
-			Console.WriteLine("OnGameStarted");
+			Logger.Info($"OnSolenoidUpdated: solenoid={solenoid}, isActive={isActive}");
 		}
 
 		static void OnGameEnded(object sender, EventArgs e)
 		{
-			Console.WriteLine("OnGameEnded");
+			Logger.Info("OnGameEnded");
 
 			_isRunning = false;
 		}
 
 		static void Main(string[] args)
 		{
-			DumpGames();
+			LogManager.Configuration = new NLog.Config.LoggingConfiguration();
+
+			var target = new NLog.Targets.ConsoleTarget("PinMame");
+
+			LogManager.Configuration.AddTarget(target);
+			LogManager.Configuration.AddRule(LogLevel.Info, LogLevel.Fatal, target);
+
+			LogManager.ReconfigExistingLoggers();
 
 			_pinMame = PinMame.Instance();
 
+			DumpGames();
+
 			_pinMame.OnGameStarted += OnGameStarted;
-			_pinMame.OnDisplayUpdate += OnDisplayUpdate;
-			_pinMame.OnSolenoid += OnSolenoid;
+			_pinMame.OnDisplayUpdated += OnDisplayUpdated;
+			_pinMame.OnSolenoidUpdated += OnSolenoidUpdated;
 			_pinMame.OnGameEnded += OnGameEnded;
 
-			_pinMame.StartGame("tf_180h");
+			_pinMame.StartGame("mm_109c");
 			//_pinMame.StartGame("mm_109c");
 			//_pinMame.StartGame("fh_906h");
 
